@@ -47,6 +47,7 @@ export function GraphView({ uploadedData }: GraphViewProps) {
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [selectedEntities, setSelectedEntities] = useState<Set<string>>(new Set());
   const [autoCameraFocus, setAutoCameraFocus] = useState(true);
+  const [edgeType, setEdgeType] = useState<'similarity' | 'high_level' | 'low_level'>('similarity');
 
   // Search queries for filtering tags and entities
   const [highLevelTagSearch, setHighLevelTagSearch] = useState("");
@@ -58,21 +59,69 @@ export function GraphView({ uploadedData }: GraphViewProps) {
 
   // Extract graph data from API response or uploaded data with useMemo
   const graphData = useMemo(() => {
+    let nodes: GraphNode[] = [];
+    let originalEdges: GraphEdge[] = [];
+
     // Prefer uploaded data if available
     if (uploadedData) {
-      return {
-        nodes: uploadedData.nodes as GraphNode[],
-        edges: uploadedData.edges,
-      };
+      nodes = uploadedData.nodes as GraphNode[];
+      originalEdges = uploadedData.edges;
+    } else if (graphDataResponse) {
+      // Otherwise use API data
+      nodes = graphDataResponse.nodes as GraphNode[];
+      originalEdges = graphDataResponse.edges;
+    } else {
+      return null;
     }
 
-    // Otherwise use API data
-    if (!graphDataResponse) return null;
-    return {
-      nodes: graphDataResponse.nodes as GraphNode[],
-      edges: graphDataResponse.edges,
-    };
-  }, [uploadedData, graphDataResponse]);
+    // If using original similarity edges
+    if (edgeType === 'similarity') {
+      return { nodes, edges: originalEdges };
+    }
+
+    // Generate edges based on tags
+    const edges: GraphEdge[] = [];
+    const nodesCount = nodes.length;
+
+    for (let i = 0; i < nodesCount; i++) {
+      for (let j = i + 1; j < nodesCount; j++) {
+        const nodeA = nodes[i];
+        const nodeB = nodes[j];
+        
+        let tagsA: string[] = [];
+        let tagsB: string[] = [];
+
+        if (edgeType === 'high_level') {
+          tagsA = nodeA.tags?.high_level || [];
+          tagsB = nodeB.tags?.high_level || [];
+        } else {
+          tagsA = nodeA.tags?.low_level || [];
+          tagsB = nodeB.tags?.low_level || [];
+        }
+
+        // Calculate Jaccard similarity for tags
+        const setA = new Set(tagsA);
+        const setB = new Set(tagsB);
+        
+        if (setA.size === 0 || setB.size === 0) continue;
+
+        const intersection = new Set([...setA].filter(x => setB.has(x)));
+        const union = new Set([...setA, ...setB]);
+        
+        if (intersection.size > 0) {
+          const similarity = intersection.size / union.size;
+          edges.push({
+            source: nodeA.id,
+            target: nodeB.id,
+            similarity,
+            type: edgeType
+          });
+        }
+      }
+    }
+
+    return { nodes, edges };
+  }, [uploadedData, graphDataResponse, edgeType]);
 
   // Get unique tags and entities from graph data
   const { allTags, allHighLevelTags, allLowLevelTags, allEntities } = useMemo(() => {
@@ -809,6 +858,19 @@ export function GraphView({ uploadedData }: GraphViewProps) {
       {/* Graph container */}
       <div className="relative flex-1">
         <svg ref={svgRef} className="w-full h-full" />
+
+        {/* Edge Type Selector */}
+        <div className="absolute top-4 right-20 z-30">
+          <select
+            value={edgeType}
+            onChange={(e) => setEdgeType(e.target.value as 'similarity' | 'high_level' | 'low_level')}
+            className="bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="similarity">Similarity</option>
+            <option value="high_level">High Level Tags</option>
+            <option value="low_level">Low Level Tags</option>
+          </select>
+        </div>
 
         {/* Search panel toggle button */}
         <button
