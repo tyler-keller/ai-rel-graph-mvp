@@ -78,22 +78,50 @@ export function GraphView({ uploadedData }: GraphViewProps) {
   const { allTags, allHighLevelTags, allLowLevelTags, allEntities } = useMemo(() => {
     if (!graphData) return { allTags: [], allHighLevelTags: [], allLowLevelTags: [], allEntities: [] };
 
+    // Helper to count frequencies
+    const tagCountMap = new Map<string, number>();
+    const entityCountMap = new Map<string, number>();
+
+    graphData.nodes.forEach((node) => {
+      [...(node.tags?.high_level || []), ...(node.tags?.low_level || [])].forEach((tag) => {
+        tagCountMap.set(tag, (tagCountMap.get(tag) || 0) + 1);
+      });
+      (node.entities || []).forEach((entity) => {
+        entityCountMap.set(entity, (entityCountMap.get(entity) || 0) + 1);
+      });
+    });
+
+    // Helper to sort by count then name
+    const sortByTagCount = (a: string, b: string) => {
+      const countA = tagCountMap.get(a) || 0;
+      const countB = tagCountMap.get(b) || 0;
+      if (countB !== countA) return countB - countA; // Descending count
+      return a.localeCompare(b); // Ascending name
+    };
+
+    const sortByEntityCount = (a: string, b: string) => {
+      const countA = entityCountMap.get(a) || 0;
+      const countB = entityCountMap.get(b) || 0;
+      if (countB !== countA) return countB - countA; // Descending count
+      return a.localeCompare(b); // Ascending name
+    };
+
     const highLevelTags = Array.from(
       new Set(graphData.nodes.flatMap((node) => node.tags?.high_level || []))
-    ).sort();
+    ).sort(sortByTagCount);
 
     const lowLevelTags = Array.from(
       new Set(graphData.nodes.flatMap((node) => node.tags?.low_level || []))
-    ).sort();
+    ).sort(sortByTagCount);
 
     // Combine all tags for unified filtering
     const allTags = Array.from(
       new Set([...highLevelTags, ...lowLevelTags])
-    ).sort();
+    ).sort(sortByTagCount);
 
     const entities = Array.from(
       new Set(graphData.nodes.flatMap((node) => node.entities || []))
-    ).sort();
+    ).sort(sortByEntityCount);
 
     return { allTags, allHighLevelTags: highLevelTags, allLowLevelTags: lowLevelTags, allEntities: entities };
   }, [graphData]);
@@ -950,7 +978,7 @@ export function GraphView({ uploadedData }: GraphViewProps) {
 
       {/* Search and filter panel - sidebar */}
       {searchPanelOpen && (
-        <div className="w-96 bg-gray-950 border-l border-gray-800 shadow-2xl overflow-y-auto flex-shrink-0">
+        <div className="w-96 bg-gray-950 border-l border-gray-800 shadow-2xl overflow-y-auto shrink-0">
           <div className="p-6">
             {/* Header */}
             <div className="flex justify-between items-center mb-6">
